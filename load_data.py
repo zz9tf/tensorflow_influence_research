@@ -1,8 +1,43 @@
-# Adapted from https://github.com/tensorflow/tensorflow/blob/master/tensorflow/contrib/learn/python/learn/datasets/mnist.py
-
 import numpy as np
 
-class DataSet(object):
+def load_movielens(dir):
+  train = np.loadtxt("%s/ml-1m-ex.train.rating"%dir, delimiter='\t')
+  valid = np.loadtxt("%s/ml-1m-ex.valid.rating"%dir, delimiter='\t')
+  test = np.loadtxt("%s/ml-1m-ex.test.rating"%dir, delimiter='\t')
+
+  train_input = train[:975460,:2].astype(np.int32)
+  train_output = train[:975460,2]
+  valid_input = valid[:-6, :2].astype(np.int32)
+  valid_output = valid[:-6, 2]
+  test_input = test[:-6, :2].astype(np.int32)
+  test_output = test[:-6, 2]
+
+  train = Dataset(train_input, train_output)
+  validation = Dataset(valid_input, valid_output)
+  test = Dataset(test_input, test_output)
+
+  return {"train": train, "validation": validation, "test": test}
+
+def load_yelp(dir):
+  train = np.loadtxt("%s/yelp-ex.train.rating"%dir, delimiter='\t')
+  valid = np.loadtxt("%s/yelp-ex.valid.rating"%dir, delimiter='\t')
+  test = np.loadtxt("%s/yelp-ex.test.rating"%dir, delimiter='\t')
+
+  train_input = train[:628881,:2].astype(np.int32)
+  train_output = train[:628881,2]
+  valid_input = valid[:, :2].astype(np.int32)
+  valid_output = valid[:, 2]
+  test_input = test[:51153, :2].astype(np.int32)
+  test_output = test[:51153, 2]
+
+  train = Dataset(train_input, train_output)
+  validation = Dataset(valid_input, valid_output)
+  test = Dataset(test_input, test_output)
+
+  return {"train": train, "validation": validation, "test": test}
+
+
+class Dataset(object):
 
     def __init__(self, x, labels):
 
