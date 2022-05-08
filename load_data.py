@@ -1,4 +1,5 @@
 import numpy as np
+import tensorflow as tf
 
 def load_movielens(dir):
   train = np.loadtxt("%s/ml-1m-ex.train.rating"%dir, delimiter='\t')
@@ -13,7 +14,7 @@ def load_movielens(dir):
   test_output = test[:-6, 2]
 
   train = Dataset(train_input, train_output)
-  validation = Dataset(valid_input, valid_output)
+  validation = (valid_input, valid_output)
   test = Dataset(test_input, test_output)
 
   return {"train": train, "validation": validation, "test": test}
@@ -31,7 +32,7 @@ def load_yelp(dir):
   test_output = test[:51153, 2]
 
   train = Dataset(train_input, train_output)
-  validation = Dataset(valid_input, valid_output)
+  validation = (valid_input, valid_output)
   test = Dataset(test_input, test_output)
 
   return {"train": train, "validation": validation, "test": test}
@@ -39,19 +40,14 @@ def load_yelp(dir):
 
 class Dataset(object):
 
-    def __init__(self, x, labels):
+    def __init__(self, x, y):
 
-        if len(x.shape) > 2:
-            x = np.reshape(x, [x.shape[0], -1])
-
-        assert(x.shape[0] == labels.shape[0])
-
-        x = x.astype(np.float32)
+        assert(x.shape[0] == y.shape[0])
 
         self._x = x
         self._x_batch = np.copy(x)
-        self._labels = labels
-        self._labels_batch = np.copy(labels)
+        self._y = y
+        self._y_batch = np.copy(y)
         self._num_examples = x.shape[0]
         self._index_in_epoch = 0
 
@@ -60,81 +56,50 @@ class Dataset(object):
         return self._x
 
     @property
-    def labels(self):
-        return self._labels
+    def y(self):
+        return self._y
 
     @property
     def num_examples(self):
         return self._num_examples
 
-    def append_one_case(self,case_x,case_label):
-        self._x = np.concatenate([self._x,case_x],axis=0)
-        self._labels = np.concatenate([self._labels,case_label],axis=0)
+    def append_one_set(self, case_x, case_y):
+        self._x = np.concatenate([self._x, case_x], axis=0)
+        self._y = np.concatenate([self._y, case_y], axis=0)
         self._x_batch = np.copy(self._x)
-        self._labels_batch = np.copy(self.labels)
+        self._y_batch = np.copy(self._y)
         self._num_examples = self._x.shape[0]
-        print ("A case is added to the dataset.")
+        print("A set is added to the dataset.")
         return self._x.shape[0]-1
 
     def reset_batch(self):
-        self._index_in_epoch = 0        
+        self._index_in_epoch = 0
         self._x_batch = np.copy(self._x)
-        self._labels_batch = np.copy(self._labels)
+        self._y_batch = np.copy(self._y)
 
-    def next_batch(self, batch_size):
-        # assert batch_size <= self._num_examples
+    def get_batch(self, batch_size=None):
+        """
+        This method will return a batch of data, and move index to the start of next batch
+        :param batch_size: A integer represents the batch size
+        :return: A tuple contains two tensor list which are batches of x and batches of y
+        """
+        if batch_size is None:
+            batch_size = self.num_examples
+
+        if self._index_in_epoch >= self.num_examples:
+            # Shuffle the data
+            shuf_index = np.arange(self._num_examples)
+            np.random.shuffle(shuf_index)
+            self._x_batch = self._x_batch[shuf_index, :]
+            self._y_batch = self._y_batch[shuf_index]
+
+            # Start next epoch
+            self._index_in_epoch = 0
 
         start = self._index_in_epoch
+        end = min(self._index_in_epoch+batch_size, self.num_examples)
+        x_batch = (tf.constant(self._x_batch[start:end, 0]), tf.constant(self._x_batch[start:end, 1]))
+        y_batch = tf.constant(self._y_batch[start:end])
         self._index_in_epoch += batch_size
-        if self._index_in_epoch > self._num_examples:
-            if self._index_in_epoch < self._num_examples + batch_size:
-                self._index_in_epoch = self._num_examples
-            else:
 
-                # Shuffle the data
-                perm = np.arange(self._num_examples)
-                np.random.shuffle(perm)
-                self._x_batch = self._x_batch[perm, :]
-                self._labels_batch = self._labels_batch[perm]
-
-                # Start next epoch
-                start = 0
-                self._index_in_epoch = batch_size
-
-        end = self._index_in_epoch
-        return self._x_batch[start:end], self._labels_batch[start:end]
-
-
-def filter_dataset(X, Y, pos_class, neg_class):
-    """
-    Filters out elements of X and Y that aren't one of pos_class or neg_class
-    then transforms labels of Y so that +1 = pos_class, -1 = neg_class.
-    """
-    assert(X.shape[0] == Y.shape[0])
-    assert(len(Y.shape) == 1)
-
-    Y = Y.astype(int)
-    
-    pos_idx = Y == pos_class
-    neg_idx = Y == neg_class        
-    Y[pos_idx] = 1
-    Y[neg_idx] = -1
-    idx_to_keep = pos_idx | neg_idx
-    X = X[idx_to_keep, ...]
-    Y = Y[idx_to_keep]    
-    return (X, Y)    
-
-
-def find_distances(target, X, theta=None):
-    assert len(X.shape) == 2, "X must be 2D, but it is currently %s" % len(X.shape)
-    target = np.reshape(target, -1)
-    assert X.shape[1] == len(target), \
-      "X (%s) and target (%s) must have same feature dimension" % (X.shape[1], len(target))
-    
-    if theta is None:
-        return np.linalg.norm(X - target, axis=1)
-    else:
-        theta = np.reshape(theta, -1)
-        
-        # Project onto theta
-        return np.abs((X - target).dot(theta))    
+        return x_batch, y_batch

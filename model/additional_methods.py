@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow import gradients
-from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 
@@ -54,3 +53,28 @@ def hessian_vector_product(ys, xs, v):
         for x, grad_elem in zip(xs, grads_with_none)]
 
     return return_grads
+
+
+def variable(name, shape, initializer):
+    """
+    Helper to create an initialized Variable with weight decay.
+    Note that the Variable is initialized with a truncated normal distribution.
+    A weight decay is added only if one is specified.
+    :param name: name of the variable
+    :param shape: list of ints
+    :param initializer: An Initializer for variable value
+    :return: Variable Tensor of variable
+    """
+    var = tf.Variable(
+        initial_value=initializer(shape=shape, dtype=tf.float64),
+        name=name)
+    return var
+
+def square_loss(y_true, y_pred):
+    """
+    This method returns sum((y_true - y_pred)**2)
+    :param y_true: A tensor, float 64, represents the real value
+    :param y_pred: A tensor, float 64, represents the  predict value
+    :return: sum((y_true - y_pred)**2)
+    """
+    return tf.reduce_sum((y_true - y_pred)**2)

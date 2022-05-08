@@ -1,8 +1,8 @@
 import tensorflow as tf
 
-class NCF(tf.keras.Model):
+class NCF(tf.Module):
     def __init__(self, **kwargs):
-        super(NCF, self).__init__()
+        super(NCF, self).__init__(name="neural_collaborative_filtering")
         model_configs = kwargs.pop('model_configs')
         self.num_users = model_configs['num_users']
         self.num_items = model_configs['num_items']
