@@ -54,22 +54,6 @@ def hessian_vector_product(ys, xs, v):
 
     return return_grads
 
-
-def variable(name, shape, initializer):
-    """
-    Helper to create an initialized Variable with weight decay.
-    Note that the Variable is initialized with a truncated normal distribution.
-    A weight decay is added only if one is specified.
-    :param name: name of the variable
-    :param shape: list of ints
-    :param initializer: An Initializer for variable value
-    :return: Variable Tensor of variable
-    """
-    var = tf.Variable(
-        initial_value=initializer(shape=shape, dtype=tf.float64),
-        name=name)
-    return var
-
 def square_loss(y_true, y_pred):
     """
     This method returns sum((y_true - y_pred)**2)
