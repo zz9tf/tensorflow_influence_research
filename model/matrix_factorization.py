@@ -79,11 +79,16 @@ class MF(tf.Module):
         return: A list of tensors, float 64, represents the parameters of model corresponding to ids.
         """
         if ids is None:
-            return [self.bias_items, self.bias_users, self.embedding_items, self.embedding_users, self.global_bias]
-        user_embedding = tf.nn.embedding_lookup(self.embedding_users, ids[0])
-        item_embedding = tf.nn.embedding_lookup(self.embedding_items, ids[1])
-        user_bias = tf.nn.embedding_lookup(self.bias_users, ids[0])
-        item_bias = tf.nn.embedding_lookup(self.bias_items, ids[1])
+            return [tf.reshape(self.bias_items, [-1])
+                    , tf.reshape(self.bias_users, [-1])
+                    , tf.reshape(self.embedding_items, [-1])
+                    , tf.reshape(self.embedding_users, [-1])
+                    , self.global_bias]
+
+        user_embedding = tf.reshape(tf.nn.embedding_lookup(self.embedding_users, ids[0]), [-1])
+        item_embedding = tf.reshape(tf.nn.embedding_lookup(self.embedding_items, ids[1]), [-1])
+        user_bias = tf.reshape(tf.nn.embedding_lookup(self.bias_users, ids[0]), [-1])
+        item_bias = tf.reshape(tf.nn.embedding_lookup(self.bias_items, ids[1]), [-1])
 
         return [item_bias, user_bias, item_embedding, user_embedding, self.global_bias]
 
@@ -93,8 +98,7 @@ class MF(tf.Module):
         This method returns the setting of getting loss method
         :return: A function for getting loss
         """
-        
-        return tf.keras.losses.MeanSquaredError()
+        return lambda real_y, predict_y: (tf.reduce_mean((real_y - predict_y)**2))
 
     def get_optimizer_setting(self, learning_rate=1e-3):
         

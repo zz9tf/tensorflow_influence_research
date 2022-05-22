@@ -1,14 +1,14 @@
+from tabnanny import verbose
 import time
 import tensorflow as tf
 import numpy as np
 import os
 import shutil
 from scipy.optimize import fmin_ncg
-from torch import inverse
 
 from model.matrix_factorization import MF
 from model.neural_collaborative_filtering import NCF
-from model.hessians import hessian_vector_product
+from model.hessians import hessian_vector_product, get_target_param_grad
 
 
 class Model:
@@ -140,7 +140,7 @@ class Model:
         gradients = [tf.convert_to_tensor(grad).numpy().flatten() for grad in gradients]
         print('Norm of the mean of gradients: %s' % np.linalg.norm(np.concatenate(gradients)))
 
-    def predict_x_inf_on_loss_function(self, loss_function="train", removed_idx=None):
+    def predict_x_inf_on_loss_function(self, verbose=True, target_loss="train", removed_idx=None):
         """
         This method predict the influence of removed single x on training loss function.
         :return:
@@ -154,30 +154,26 @@ class Model:
         with tf.GradientTape() as tape:
             predict_y = self.predict(removed_x_idx)
             loss = self.get_loss(removed_y, predict_y)
-            removed_grad = tape.gradient(loss, self.predict.trainable_variables)
+            removed_grad = get_target_param_grad(tape.gradient(loss, self.predict.trainable_variables), removed_x_idx)
 
         # total loss
         x_idxs, real_ys = self.dataset["train"].get_batch()
-        total_params = self.predict.get_params()
-        print("total params: ", total_params)
-        exit()
-
-        with tf.GradientTape() as tape:
-            predict_ys = self.predict(x_idxs)
-            loss = self.get_loss(real_ys, predict_ys)
-            total_grad = tape.gradient(loss, self.predict.trainable_variables)
 
         # hvp function
         function_for_hessian = lambda : self.get_loss(real_ys, self.predict(x_idxs))
-        hvp_f = lambda cg_x : np.concatenate(hessian_vector_product(self.predict.trainable_variables
-                                                                    , function_for_hessian
-                                                                    , cg_x))
+        hvp_f = lambda cg_x : np.concatenate(hessian_vector_product(xs=self.predict.trainable_variables
+                                                                    , function=function_for_hessian
+                                                                    , p=self.split_concatenate_params(cg_x)
+                                                                    , id=removed_x_idx))
         inverse_hvp = self.get_inverse_hvp(
+            verbose=verbose,
             hvp_f=hvp_f,
-            b=removed_grad,
+            b=np.concatenate(removed_grad),
             cg_x0=removed_x0
         )
-
+        print(inverse_hvp)
+        # related_idxs = self.dataset[target_loss].get_related_idxs()
+        exit()
 
     def predict_x_inf_on_y_test(self, test_idx=None, removed_idx=None):
         """
@@ -191,17 +187,48 @@ class Model:
         function = lambda x_idxs : self.get_loss(real_ys, self.predict(x_idxs))
         hessian_vector = hessian_vector_product(x_idxs, function)
 
-    def get_inverse_hvp(self, hvp_f, b, cg_x0):
+    def get_inverse_hvp(self, verbose, hvp_f, b, cg_x0):
+        """
+        
+        """
         fmin_loss_fn = lambda x: 0.5 * np.dot(hvp_f(x), x) - np.dot(b, x)
         fmin_grad_fn = lambda x: hvp_f(x) - b
         fmin_hvp = lambda x, p: hvp_f(p)
+        cg_callback = self.get_cg_callback(verbose, fmin_grad_fn, hvp_f, b)
         
-        # working on this part!!!!
         fmin_results = fmin_ncg(
             f=fmin_loss_fn,
             x0=np.concatenate(cg_x0),
             fprime=fmin_grad_fn,
             fhess_p=fmin_hvp,
+            callback=cg_callback,
             avextol=self.avextol,
             maxiter=100
         )
+
+        return fmin_results
+
+    def split_concatenate_params(self, concatenate_x):
+        """
+        This method split all paramters of one product of one user and one item
+        """
+        split_params = []
+        params = self.predict.get_params((0, 0))
+        cur_pos = 0
+        for param in params:
+            split_params.append(concatenate_x[cur_pos : cur_pos+param.shape[0]])
+            cur_pos += param.shape[0]
+
+        return split_params
+    
+    def get_cg_callback(self, verbose, fmin_grad_fn, hvp_f, b):
+        fmin_loss_split = lambda x: (0.5 * np.dot(hvp_f(x), x), -np.dot(b, x))
+        
+        def cg_callback(x):
+            if verbose:
+                half_xhx, bx = fmin_loss_split(x)
+                print("Split function value: %s, %s" % (half_xhx, bx))
+                print("Function value: ", str(half_xhx + bx))
+                print("Function grad: %s" % fmin_grad_fn(x))
+        
+        return cg_callback

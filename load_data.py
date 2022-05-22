@@ -116,3 +116,6 @@ class Dataset(object):
         y_point = tf.constant(self.y[idx])
 
         return x_point, y_point
+
+    def get_related_idxs(self, id):
+        pass
