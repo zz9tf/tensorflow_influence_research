@@ -2,13 +2,14 @@ import numpy as np
 from scipy.stats import pearsonr
 
 from load_data import load_movielens, load_yelp
-from model.generic_neural_net import Model
+from model.matrix_factorization import MF
+from model.neural_collaborative_filtering import NCF
 
 configs = {
     # detaset
     "dataset": "movielens",  # name of dataset: movielens or yelp
     # model configs
-    "predict_model": "MF",  # modeltype:MF or NCF
+    "model": "MF",  # modeltype:MF or NCF
     "embedding_size": 16,  # embedding size
     # train configs
     "batch_size": 512,  # 3020,  # the batch_size for training or predict, None for not to use batch
@@ -41,11 +42,18 @@ else:
 num_users = int(np.max(dataset["train"].x[:, 0]) + 1)
 num_items = int(np.max(dataset["train"].x[:, 1]) + 1)
 
+model = None
+if configs["model"] == "MF":
+    Model = MF
+elif model == "NCF":
+    Model = NCF()
+else:
+    assert NotImplementedError
+
 model = Model(
     # loading data
     dataset=dataset,
     # model
-    model=configs['predict_model'],
     model_configs={
         'num_users': num_users,
         'num_items': num_items,
@@ -93,7 +101,7 @@ for i, removed_idx in enumerate(removed_idxs):
             checkpoint_name="orin_{}_{}".format(removed_idx, percentage_to_keep),
             plot=configs["plot"]
         )
-        total_predict_ys = model.predict(total_x_idxs)
+        total_predict_ys = model.model(total_x_idxs)
         ori_loss = model.get_loss(total_ys, total_predict_ys).numpy()
         print("ori_loss: ", ori_loss)
         # Influence on loss function

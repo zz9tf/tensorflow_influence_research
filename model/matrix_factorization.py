@@ -1,7 +1,9 @@
 import tensorflow as tf
 import numpy as np
+import os
+from model.generic_neural_net import Model
 
-class MF(tf.Module):
+class MF(Model):
     def __init__(self, **kwargs):
         super().__init__(name="matrix_factorization")
         model_configs = kwargs.pop('model_configs')
@@ -10,13 +12,14 @@ class MF(tf.Module):
         self.embedding_size = model_configs['embedding_size']
         self.weight_decay = model_configs['weight_decay']
 
+
     def __str__(self):
         return "-----------   MF   ------------\n" \
                + "number of users: %d\n" % self.num_users \
                + "number of items: %d\n" % self.num_items \
                + "embedding size: %d\n" % self.embedding_size
 
-    def initialize_model(self, seed=0):
+    def initialize_parameters(self, seed=0):
         
         """
         This method initializes the basis parameters in the model, such as
@@ -52,7 +55,7 @@ class MF(tf.Module):
                 , dtype=tf.float64)
                 , name="global_bias")
 
-    def __call__(self, ids):
+    def get_predict(self, ids):
         
         """
         This method will do the predict process of the model
@@ -73,13 +76,37 @@ class MF(tf.Module):
 
         return rating
 
-    def get_params(self, ids=None):
+    def get_loss(self, real_y, predict_y):
+        """
+        This method returns the loss """
+        loss_val = tf.reduce_mean((real_y - predict_y)**2)
+        if self.weight_decay is not None:
+            loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_users), self.weight_decay)
+            loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_items), self.weight_decay)
+        return loss_val
+
+    def get_one_step_train_op(self, loss_op, learning_rate=1e-3):
+        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        one_step_train_op = optimizer.minimize(loss_op)
         
+        return one_step_train_op
+
+    def get_accuracy_op(self, predict_op, real_ys):
+        """Evaluate the quality of the logits at predicting the label.
+        Args:
+          predict_op: Logits tensor, float - [batch_size, NUM_CLASSES].
+          real_ys: Labels tensor, int32 - [batch_size], with values in the
+            range [0, NUM_CLASSES).
+        Returns:
+          A scalar int32 tensor with the number of examples (out of batch_size)
+          that were predicted correctly.
         """
-        This method returns the parameters of model corresponding to ids.
-        :param ids: A tuple, (user_ids, item_ids), which user_ids and item_ids are tensors, int 32
-        :return: A list of tensors, float 64, represents the parameters of model corresponding to ids.
-        """
+        # correct = tf.nn.in_top_k(logits, labels, 1)
+        # return tf.reduce_mean(1. - tf.abs(logits - labels) / (labels + 0.0001))
+        return tf.reduce_mean(tf.abs(predict_op - real_ys))
+
+    def get_params(self, ids=None):
+        """ waiting to be modified """
         if ids is None:
             params = [self.bias_items, self.bias_users, self.embedding_items, self.embedding_users] #, self.global_bias
             return [tf.reshape(param, [-1]) for param in params]
@@ -91,26 +118,3 @@ class MF(tf.Module):
         params = [item_bias, user_bias, item_embedding, user_embedding] # , self.global_bias
 
         return [tf.reshape(param, [-1]) for param in params]
-
-    def get_loss_setting(self):
-
-        """
-        This method returns the setting of getting loss method
-        :return: A function for getting loss
-        """
-        def loss_function(real_y, predict_y):
-            loss_val = tf.reduce_mean((real_y - predict_y)**2)
-            if self.weight_decay is not None:
-                loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_users), self.weight_decay)
-                loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_items), self.weight_decay)
-            return loss_val
-        return loss_function
-
-    def get_optimizer_setting(self, learning_rate=1e-3):
-        
-        """
-        This method returns the setting of getting optimizer
-        :return: An object represents an optimizer
-        """
-        
-        return tf.keras.optimizers.Adam(learning_rate=learning_rate)

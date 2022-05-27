@@ -18,22 +18,10 @@ class Model:
         # loading data
         self.dataset = kwargs.pop('dataset')
 
-        # create model
-        self.predict = kwargs.pop("predict_model", "MF")
-        if self.predict == "MF":
-            self.predict = MF(model_configs=kwargs.pop('model_configs'))
-        elif self.predict == "NCF":
-            self.predict = NCF(model_configs=kwargs.pop('model_configs'))
-        else:
-            assert NotImplementedError
-
         # training hyperparameter
         self.batch_size = kwargs.pop('batch_size', None)
+        self.learning_rate = kwargs.pop('learning_rate')
         self.weight_decay = kwargs.pop('weight_decay')
-
-        # training model setting
-        self.get_loss = self.predict.get_loss_setting()
-        self.optimizer = self.predict.get_optimizer_setting(learning_rate=kwargs.pop('learning_rate'))
 
         # influence function
         self.avextol = kwargs.pop('avextol')
@@ -45,9 +33,36 @@ class Model:
             os.makedirs(self.result_dir)
         self.model_name = kwargs.pop('model_name')
 
+        self.initialize_model()
+
+    def initialize_model(self):
+        # Initialize session
+        os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+        gpu_options = tf.GPUOptions(allow_growth=True)
+        self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+
+        # Setup input
+        self.inputs_placeholder = tf.placeholder(
+            tf.int32,
+            shape=(None, 2),
+            name="inputs_placeholder"
+        )
+        self.real_ys_placeholder = tf.placeholder(
+            tf.float32,
+            shape=(None),
+            name="labels_placeholder"
+        )
+
+        # Setup predict and training
+        self.predict_op = self.get_predict(self.input_placeholder)
+        self.loss_op = self.get_loss(self.real_ys_placeholder, self.predict_op)
+        self.one_step_train_op = self.get_one_step_train_op(self.loss_op, self.learning_rate)
+        self.accuracy_op = self.get_accuracy_op(self.predict_op, self.real_ys_placeholder)
+
+
     def __str__(self):
         return "Model name: %s\n" % self.model_name \
-               + str(self.predict) \
+               + str(self.model) \
                + "weight decay: %d\n" % self.weight_decay \
                + "number of training examples: %d\n" % self.dataset["train"].num_examples \
                + "number of testing examples: %d\n" % self.dataset["test"].num_examples \
@@ -56,7 +71,7 @@ class Model:
                + "-------------------------------\n"
 
     def load_model_checkpoint(self, load_checkpoint=False, checkpoint_name=None):
-        self.predict.initialize_model()
+        self.model.initialize_model()
         num_epoch = 1
         if load_checkpoint:
             if checkpoint_name in os.listdir(os.path.join(self.result_dir)):
@@ -70,7 +85,7 @@ class Model:
                 for char in model_name.split("_")[-1]:
                     if char.isdigit():
                         num_epoch = num_epoch * 10 + int(char)
-                checkpoint = tf.train.Checkpoint(model=self.predict)
+                checkpoint = tf.train.Checkpoint(model=self.model)
                 checkpoint.restore(os.path.join(self.result_dir, model_name, "out-1"))
 
         return num_epoch
@@ -101,7 +116,7 @@ class Model:
             print("\nTraining for %s epoch" % num_epoch)
         if start == 1:
             loss_diff = 999999999
-            checkpoint = tf.train.Checkpoint(model=self.predict)
+            checkpoint = tf.train.Checkpoint(model=self.model)
             all_train_loss = []
             all_test_loss = []
             for epoch in range(start, num_epoch):
@@ -109,12 +124,12 @@ class Model:
                 start_time = time.time()
                 with tf.GradientTape() as tape:
                     x_idxs, real_ys = self.dataset["train"].get_batch(self.batch_size)
-                    predict_ys = self.predict(x_idxs)
+                    predict_ys = self.model(x_idxs)
                     train_loss = self.get_loss(real_ys, predict_ys)
-                    gradients = tape.gradient(train_loss, self.predict.trainable_variables)
-                    self.optimizer.apply_gradients(zip(gradients, self.predict.trainable_variables))
+                    gradients = tape.gradient(train_loss, self.model.trainable_variables)
+                    self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
                 x_idxs, real_ys = self.dataset["test"].get_batch(self.batch_size)
-                predict_ys = self.predict(x_idxs)
+                predict_ys = self.model(x_idxs)
                 test_loss = self.get_loss(real_ys, predict_ys)
                 duration = time.time() - start_time
                 if verbose and epoch % 1000 == 0:
@@ -123,7 +138,7 @@ class Model:
                 all_train_loss.append(float(train_loss))
                 all_test_loss.append(float(test_loss))
             if save_checkpoints:
-                checkpoint = tf.train.Checkpoint(model=self.predict)
+                checkpoint = tf.train.Checkpoint(model=self.model)
                 checkpoint.save(os.path.join(self.result_dir, "out", "out"))
                 checkpoint = os.path.join(self.result_dir, checkpoint_name)
                 if os.path.exists(checkpoint):
@@ -148,14 +163,14 @@ class Model:
         """
         with tf.GradientTape() as tape:
             x_idxs, real_ys = self.dataset["train"].get_batch()
-            predict_ys = self.predict(x_idxs)
+            predict_ys = self.model(x_idxs)
             loss = self.get_loss(real_ys, predict_ys)
 
             test_x_idxs, test_real_ys = self.dataset["test"].get_batch()
-            test_predict_ys = self.predict(test_x_idxs)
+            test_predict_ys = self.model(test_x_idxs)
             test_loss = self.get_loss(test_real_ys, test_predict_ys)
 
-            gradients = tape.gradient(loss, self.predict.trainable_variables)
+            gradients = tape.gradient(loss, self.model.trainable_variables)
 
         print("\nEvaluation:")
         print('Train loss (w/o reg) on all data: %s' % loss.numpy())
@@ -178,19 +193,19 @@ class Model:
         # removed point
         removed_x_idx, removed_y = self.dataset["train"].get_one(removed_id)
         with tf.GradientTape() as tape:
-            loss = self.get_loss(removed_y, self.predict(removed_x_idx))
+            loss = self.get_loss(removed_y, self.model(removed_x_idx))
             removed_grads = [tf.reshape(tf.convert_to_tensor(grad), [-1]) \
-                        for grad in tape.gradient(loss, self.predict.trainable_variables)]
+                        for grad in tape.gradient(loss, self.model.trainable_variables)]
 
         # hvp
         x_idxs, real_ys = self.dataset["train"].get_batch()
-        function_for_hessian = lambda : self.get_loss(real_ys, self.predict(x_idxs))
-        hvp_f = lambda cg_x : np.concatenate(hessian_vector_product(xs=self.predict.trainable_variables
+        function_for_hessian = lambda : self.get_loss(real_ys, self.model(x_idxs))
+        hvp_f = lambda cg_x : np.concatenate(hessian_vector_product(xs=self.model.trainable_variables
                                                                     , function=function_for_hessian
                                                                     , ps=self.split_concatenate_params(cg_x, removed_grads)
                                                                     , id=removed_x_idx))
         print(hvp_f(np.concatenate(removed_grads)))
-        print(tf.hessians(function_for_hessian(), self.predict.trainable_variables))
+        print(tf.hessians(function_for_hessian(), self.model.trainable_variables))
         exit()
 
         inverse_hvp = self.get_inverse_hvp(verbose=verbose,
@@ -200,9 +215,9 @@ class Model:
         # target loss
         target_x_idxs, target_real_ys = self.dataset[target_loss].get_batch()
         with tf.GradientTape() as tape:
-            loss = self.get_loss(target_real_ys, self.predict(target_x_idxs))
+            loss = self.get_loss(target_real_ys, self.model(target_x_idxs))
             target_grads = [tf.reshape(tf.convert_to_tensor(grad), [-1]) \
-                        for grad in tape.gradient(loss, self.predict.trainable_variables)]
+                        for grad in tape.gradient(loss, self.model.trainable_variables)]
         
         predict_diff = np.dot(np.concatenate(target_grads), inverse_hvp) / self.dataset["train"].num_examples
         return -predict_diff
@@ -216,7 +231,7 @@ class Model:
         assert removed_id is not None
         test_x_idx, test_real_y = self.dataset["test"].get_point(test_id)
         x_idxs, real_ys = self.dataset["train"].get_batch()
-        function = lambda x_idxs : self.get_loss(real_ys, self.predict(x_idxs))
+        function = lambda x_idxs : self.get_loss(real_ys, self.model(x_idxs))
         hessian_vector = hessian_vector_product(x_idxs, function)
 
     def get_inverse_hvp(self, verbose, hvp_f, b):
