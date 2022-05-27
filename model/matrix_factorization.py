@@ -8,6 +8,7 @@ class MF(tf.Module):
         self.num_users = model_configs['num_users']
         self.num_items = model_configs['num_items']
         self.embedding_size = model_configs['embedding_size']
+        self.weight_decay = model_configs['weight_decay']
 
     def __str__(self):
         return "-----------   MF   ------------\n" \
@@ -76,21 +77,20 @@ class MF(tf.Module):
         
         """
         This method returns the parameters of model corresponding to ids.
-        return: A list of tensors, float 64, represents the parameters of model corresponding to ids.
+        :param ids: A tuple, (user_ids, item_ids), which user_ids and item_ids are tensors, int 32
+        :return: A list of tensors, float 64, represents the parameters of model corresponding to ids.
         """
         if ids is None:
-            return [tf.reshape(self.bias_items, [-1])
-                    , tf.reshape(self.bias_users, [-1])
-                    , tf.reshape(self.embedding_items, [-1])
-                    , tf.reshape(self.embedding_users, [-1])
-                    , self.global_bias]
+            params = [self.bias_items, self.bias_users, self.embedding_items, self.embedding_users] #, self.global_bias
+            return [tf.reshape(param, [-1]) for param in params]
 
-        user_embedding = tf.reshape(tf.nn.embedding_lookup(self.embedding_users, ids[0]), [-1])
-        item_embedding = tf.reshape(tf.nn.embedding_lookup(self.embedding_items, ids[1]), [-1])
-        user_bias = tf.reshape(tf.nn.embedding_lookup(self.bias_users, ids[0]), [-1])
-        item_bias = tf.reshape(tf.nn.embedding_lookup(self.bias_items, ids[1]), [-1])
+        user_embedding = tf.nn.embedding_lookup(self.embedding_users, ids[0])
+        item_embedding = tf.nn.embedding_lookup(self.embedding_items, ids[1])
+        user_bias = tf.nn.embedding_lookup(self.bias_users, ids[0])
+        item_bias = tf.nn.embedding_lookup(self.bias_items, ids[1])
+        params = [item_bias, user_bias, item_embedding, user_embedding] # , self.global_bias
 
-        return [item_bias, user_bias, item_embedding, user_embedding, self.global_bias]
+        return [tf.reshape(param, [-1]) for param in params]
 
     def get_loss_setting(self):
 
@@ -98,7 +98,13 @@ class MF(tf.Module):
         This method returns the setting of getting loss method
         :return: A function for getting loss
         """
-        return lambda real_y, predict_y: (tf.reduce_mean((real_y - predict_y)**2))
+        def loss_function(real_y, predict_y):
+            loss_val = tf.reduce_mean((real_y - predict_y)**2)
+            if self.weight_decay is not None:
+                loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_users), self.weight_decay)
+                loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_items), self.weight_decay)
+            return loss_val
+        return loss_function
 
     def get_optimizer_setting(self, learning_rate=1e-3):
         

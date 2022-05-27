@@ -71,7 +71,7 @@ class Dataset(object):
         :return: None
         """
         if idxs is None:
-            idxs = np.array(range(self.num_examples))
+            idxs = np.array(range(self.x.shape[0]))
         if keep_idxs is not None:
             keep_idxs = np.array(keep_idxs)
             idxs = np.concatenate((idxs, keep_idxs), axis=0)
@@ -87,7 +87,9 @@ class Dataset(object):
         :return: A tuple contains two tensor list which are batches of x and batches of y
         """
         if batch_size is None:
-            batch_size = self.num_examples
+            x_batch = (tf.constant(self.x_copy[:, 0]),  tf.constant(self.x_copy[:, 1]))
+            y_batch = tf.constant(self.y_copy)
+            return x_batch, y_batch
 
         if self.index_in_epoch >= self.num_examples:
             # Shuffle the data
@@ -117,5 +119,14 @@ class Dataset(object):
 
         return x_point, y_point
 
-    def get_related_idxs(self, id):
-        pass
+    def get_related_idxs(self, idx):
+        """
+        
+        """
+        related_u_id = np.where(self.x_copy[:, 0] == idx[0])[0]
+        related_i_id = np.where(self.x_copy[:, 1] == idx[1])[0]
+        all_id = np.unique(np.concatenate((related_u_id, related_i_id)))
+        related_x_batch = (tf.constant(self.x_copy[all_id, 0]), tf.constant(self.x_copy[all_id, 1]))
+        related_y_batch = tf.constant(self.y_copy[all_id])
+
+        return related_x_batch, related_y_batch
