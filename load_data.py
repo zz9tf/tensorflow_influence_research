@@ -87,9 +87,7 @@ class Dataset(object):
         :return: A tuple contains two tensor list which are batches of x and batches of y
         """
         if batch_size is None:
-            x_batch = (tf.constant(self.x_copy[:, 0]),  tf.constant(self.x_copy[:, 1]))
-            y_batch = tf.constant(self.y_copy)
-            return x_batch, y_batch
+            return self.x_copy, self.y_copy
 
         if self.index_in_epoch >= self.num_examples:
             # Shuffle the data
@@ -103,21 +101,18 @@ class Dataset(object):
 
         start = self.index_in_epoch
         end = min(self.index_in_epoch + batch_size, self.num_examples)
-        x_batch = (tf.constant(self.x_copy[start:end, 0]), tf.constant(self.x_copy[start:end, 1]))
-        y_batch = tf.constant(self.y_copy[start:end])
+        
         self.index_in_epoch += batch_size
 
-        return x_batch, y_batch
+        return self.x_copy[start:end], self.y_copy[start:end]
 
     def get_one(self, idx=None):
         """
         This method will return one point of data
         """
         assert idx is not None
-        x_point = (tf.constant(self.x[idx, 0]), tf.constant(self.x[idx, 1]))
-        y_point = tf.constant(self.y[idx])
 
-        return x_point, y_point
+        return self.x[idx], self.y[idx]
 
     def get_related_idxs(self, idx):
         """

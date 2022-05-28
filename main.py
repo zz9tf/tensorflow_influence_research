@@ -46,13 +46,11 @@ model = None
 if configs["model"] == "MF":
     Model = MF
 elif model == "NCF":
-    Model = NCF()
+    Model = NCF
 else:
     assert NotImplementedError
 
 model = Model(
-    # loading data
-    dataset=dataset,
     # model
     model_configs={
         'num_users': num_users,
@@ -60,18 +58,24 @@ model = Model(
         'embedding_size': configs['embedding_size'],
         'weight_decay': configs['weight_decay'],
     },
-    # train configs
-    batch_size=configs['batch_size'],
-    learning_rate=configs['lr'],
-    weight_decay=configs['weight_decay'],
-    # influence function
-    avextol=configs['avextol'],
-    damping=configs['damping'],
-    # loading configs
-    result_dir='result',
-    model_name='%s_%s_explicit_damping%.0e_avextol%.0e_embed%d_wd%.0e' % (
-        configs['dataset'], configs['predict_model'], configs['damping']
-        , configs['avextol'], configs['embedding_size'], configs['weight_decay']))
+    basic_configs={
+        # loading data
+        'dataset': dataset,
+        # train configs
+        'batch_size': configs['batch_size'],
+        'learning_rate': configs['lr'],
+        'weight_decay': configs['weight_decay'],
+        
+        # influence function
+        'avextol': configs['avextol'],
+        'damping': configs['damping'],
+        # loading configs
+        'result_dir': 'result',
+        'model_name': '%s_%s_explicit_damping%.0e_avextol%.0e_embed%d_wd%.0e' % (
+            configs['dataset'], configs['model'], configs['damping']
+            , configs['avextol'], configs['embedding_size'], configs['weight_decay'])
+    }
+)
 
 model.train(
             num_epoch=configs["num_epoch_train"],
@@ -79,6 +83,7 @@ model.train(
             checkpoint_name="test",
             plot=configs["plot"]
         )
+exit()
 model.predict_x_inf_on_loss_function(removed_id=12938, target_loss=configs["target_loss"])
 
 

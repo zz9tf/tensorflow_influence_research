@@ -1,68 +1,76 @@
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import numpy as np
 import time, os, shutil
 from scipy.optimize import fmin_ncg
 import matplotlib.pyplot as plt
 
-from model.matrix_factorization import MF
-from model.neural_collaborative_filtering import NCF
 from model.hessians import hessian_vector_product, get_target_param_grad
-tf.compat.v1.disable_eager_execution()
+tf.disable_eager_execution()
 
-class Model:
+class Model(object):
     """
     Multi-class classification
     """
 
     def __init__(self, **kwargs):
+        basic_configs = kwargs.pop('basic_configs')
         # loading data
-        self.dataset = kwargs.pop('dataset')
+        self.dataset = basic_configs.pop('dataset')
 
         # training hyperparameter
-        self.batch_size = kwargs.pop('batch_size', None)
-        self.learning_rate = kwargs.pop('learning_rate')
-        self.weight_decay = kwargs.pop('weight_decay')
+        self.batch_size = basic_configs.pop('batch_size', None)
+        self.learning_rate = basic_configs.pop('learning_rate')
+        self.weight_decay = basic_configs.pop('weight_decay')
 
         # influence function
-        self.avextol = kwargs.pop('avextol')
-        self.damping = kwargs.pop('damping')
+        self.avextol = basic_configs.pop('avextol')
+        self.damping = basic_configs.pop('damping')
 
         # create loading and saving location
-        self.result_dir = kwargs.pop('result_dir', 'result')
+        self.result_dir = basic_configs.pop('result_dir', 'result')
         if os.path.exists(self.result_dir) is False:
             os.makedirs(self.result_dir)
-        self.model_name = kwargs.pop('model_name')
+        self.model_name = basic_configs.pop('model_name')
 
-        self.initialize_model()
-
-    def initialize_model(self):
         # Initialize session
         os.environ["CUDA_VISIBLE_DEVICES"] = "1"
         gpu_options = tf.GPUOptions(allow_growth=True)
         self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 
+    def initialize_op(self):
+        self.saver = tf.train.Saver()
+
         # Setup input
-        self.inputs_placeholder = tf.placeholder(
+        self.xs_placeholder = tf.placeholder(
             tf.int32,
             shape=(None, 2),
-            name="inputs_placeholder"
+            name="xs_placeholder"
         )
         self.real_ys_placeholder = tf.placeholder(
-            tf.float32,
+            tf.float64,
             shape=(None),
-            name="labels_placeholder"
+            name="real_ys_placeholder"
         )
 
         # Setup predict and training
-        self.predict_op = self.get_predict(self.input_placeholder)
-        self.loss_op = self.get_loss(self.real_ys_placeholder, self.predict_op)
-        self.one_step_train_op = self.get_one_step_train_op(self.loss_op, self.learning_rate)
-        self.accuracy_op = self.get_accuracy_op(self.predict_op, self.real_ys_placeholder)
+        self.predicts_op = self.get_predict(self.xs_placeholder)
+        self.loss_op = self.get_loss(self.real_ys_placeholder, self.predicts_op)
+        self.all_params = self.get_all_params()
+        self.one_step_train_op = self.get_one_step_train_op(self.learning_rate, self.loss_op)
+        self.accuracy_op = self.get_accuracy_op(self.predicts_op, self.real_ys_placeholder)
+        
+        self.train_grad_op = tf.gradients(self.loss_op, self.all_params)
+        self.fill_feed_dict = lambda batch_data: {self.xs_placeholder: batch_data[0], self.real_ys_placeholder: batch_data[1]}
+        # Setup hessian
+        # self.v_placeholder = [tf.placeholder(tf.float32, shape=a.get_shape()) for a in self.params]
+        # self.hvp_op = hessian_vector_product(self.loss_op, self.all_trainable_params, self.p_placeholder)
+
+        self.sess.run(tf.global_variables_initializer())
 
 
-    def __str__(self):
+    def __str__(self, details):
         return "Model name: %s\n" % self.model_name \
-               + str(self.model) \
+               + details \
                + "weight decay: %d\n" % self.weight_decay \
                + "number of training examples: %d\n" % self.dataset["train"].num_examples \
                + "number of testing examples: %d\n" % self.dataset["test"].num_examples \
@@ -71,22 +79,20 @@ class Model:
                + "-------------------------------\n"
 
     def load_model_checkpoint(self, load_checkpoint=False, checkpoint_name=None):
-        self.model.initialize_model()
+        self.initialize_op()
+
         num_epoch = 1
         if load_checkpoint:
-            if checkpoint_name in os.listdir(os.path.join(self.result_dir)):
-                model_name = checkpoint_name
-            else:
+            if checkpoint_name not in os.listdir(os.path.join(self.result_dir)):
                 for model in os.listdir(os.path.join(self.result_dir)):
                     print(model)
-                model_name = input("Which model do you want to load?(q to exit)")
+                checkpoint_name = input("Which model do you want to load?(q to exit)")
             
-            if model_name != "q":
-                for char in model_name.split("_")[-1]:
+            if checkpoint_name != "q":
+                for char in checkpoint_name.split("_")[-1]:
                     if char.isdigit():
                         num_epoch = num_epoch * 10 + int(char)
-                checkpoint = tf.train.Checkpoint(model=self.model)
-                checkpoint.restore(os.path.join(self.result_dir, model_name, "out-1"))
+                self.saver.restore(self.sess, checkpoint_name)
 
         return num_epoch
 
@@ -108,50 +114,47 @@ class Model:
         print(self.__str__())
 
         # start training
-        """ This part normally initializes the parameter in the model and trains it again """
+        """ This part normally initializes the parameter in the model and trains it """
         checkpoint_name += "___" + self.model_name + "_step%d" % num_epoch
         print("--- Start {} ---".format(checkpoint_name))
         start = self.load_model_checkpoint(load_checkpoint, checkpoint_name)
         if verbose:
             print("\nTraining for %s epoch" % num_epoch)
         if start == 1:
-            loss_diff = 999999999
-            checkpoint = tf.train.Checkpoint(model=self.model)
             all_train_loss = []
             all_test_loss = []
             for epoch in range(start, num_epoch):
-                
+
                 start_time = time.time()
-                with tf.GradientTape() as tape:
-                    x_idxs, real_ys = self.dataset["train"].get_batch(self.batch_size)
-                    predict_ys = self.model(x_idxs)
-                    train_loss = self.get_loss(real_ys, predict_ys)
-                    gradients = tape.gradient(train_loss, self.model.trainable_variables)
-                    self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-                x_idxs, real_ys = self.dataset["test"].get_batch(self.batch_size)
-                predict_ys = self.model(x_idxs)
-                test_loss = self.get_loss(real_ys, predict_ys)
+                
+                # Train
+                feed_dict = self.fill_feed_dict(self.dataset["train"].get_batch(self.batch_size))
+                _, train_loss = self.sess.run([self.one_step_train_op, self.loss_op], feed_dict=feed_dict)
+                all_train_loss.append(train_loss)
+                
+                # Test
+                feed_dict = self.fill_feed_dict(self.dataset["test"].get_batch())
+                test_loss = self.sess.run(self.loss_op, feed_dict=feed_dict)
+                all_test_loss.append(test_loss)
+
                 duration = time.time() - start_time
                 if verbose and epoch % 1000 == 0:
                     print('Epoch %d: loss = %.8f (%.3f sec)' % (epoch, train_loss, duration))
 
-                all_train_loss.append(float(train_loss))
-                all_test_loss.append(float(test_loss))
             if save_checkpoints:
-                checkpoint = tf.train.Checkpoint(model=self.model)
-                checkpoint.save(os.path.join(self.result_dir, "out", "out"))
+                self.saver.save(self.sess, os.path.join(self.result_dir, "out", "out"))
                 checkpoint = os.path.join(self.result_dir, checkpoint_name)
                 if os.path.exists(checkpoint):
                     shutil.rmtree(checkpoint)
                 os.rename(os.path.join(self.result_dir, 'out'), checkpoint)
 
             if plot:
-                plt.plot(train_loss, label="train loss")
-                plt.plot(test_loss, label="test loss")
+                plt.plot(all_train_loss, label="train loss")
+                plt.plot(all_test_loss, label="test loss")
                 plt.legend()
                 plt.show()
 
-        self.evaluate()
+        # self.evaluate()
         
     def retrain(self):
         print("Warning: this method should be override!")
