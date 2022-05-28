@@ -6,8 +6,7 @@ import matplotlib.pyplot as plt
 
 from model.matrix_factorization import MF
 from model.neural_collaborative_filtering import NCF
-from model.hessians import hessian_vector_product, get_target_param_grad
-tf.compat.v1.disable_eager_execution()
+from model.hessians import hessian_vector_product, hessian
 
 class Model:
     """
@@ -179,18 +178,16 @@ class Model:
         removed_x_idx, removed_y = self.dataset["train"].get_one(removed_id)
         with tf.GradientTape() as tape:
             loss = self.get_loss(removed_y, self.predict(removed_x_idx))
-            removed_grads = [tf.reshape(tf.convert_to_tensor(grad), [-1]) \
-                        for grad in tape.gradient(loss, self.predict.trainable_variables)]
+            removed_grads = [tf.convert_to_tensor(grad) for grad in tape.gradient(loss, self.predict.trainable_variables)]
 
         # hvp
         x_idxs, real_ys = self.dataset["train"].get_batch()
         function_for_hessian = lambda : self.get_loss(real_ys, self.predict(x_idxs))
         hvp_f = lambda cg_x : np.concatenate(hessian_vector_product(xs=self.predict.trainable_variables
                                                                     , function=function_for_hessian
-                                                                    , ps=self.split_concatenate_params(cg_x, removed_grads)
-                                                                    , id=removed_x_idx))
+                                                                    , ps=self.split_concatenate_params(cg_x, removed_grads)))
         print(hvp_f(np.concatenate(removed_grads)))
-        print(tf.hessians(function_for_hessian(), self.predict.trainable_variables))
+        print(hessian(self.predict.trainable_variables, function_for_hessian))
         exit()
 
         inverse_hvp = self.get_inverse_hvp(verbose=verbose,
@@ -201,8 +198,7 @@ class Model:
         target_x_idxs, target_real_ys = self.dataset[target_loss].get_batch()
         with tf.GradientTape() as tape:
             loss = self.get_loss(target_real_ys, self.predict(target_x_idxs))
-            target_grads = [tf.reshape(tf.convert_to_tensor(grad), [-1]) \
-                        for grad in tape.gradient(loss, self.predict.trainable_variables)]
+            target_grads = [tf.convert_to_tensor(grad) for grad in tape.gradient(loss, self.predict.trainable_variables)]
         
         predict_diff = np.dot(np.concatenate(target_grads), inverse_hvp) / self.dataset["train"].num_examples
         return -predict_diff
@@ -247,7 +243,6 @@ class Model:
         split_params = []
         cur_pos = 0
         for boilerplate in boilerplates:
-            boilerplate = tf.reshape(boilerplate, [-1])
             split_params.append(concatenate_x[cur_pos : cur_pos+boilerplate.shape[0]])
             cur_pos += boilerplate.shape[0]
 

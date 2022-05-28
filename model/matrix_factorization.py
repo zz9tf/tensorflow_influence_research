@@ -29,11 +29,11 @@ class MF(tf.Module):
             initializer = tf.keras.initializers.TruncatedNormal(
                 stddev=1 / np.square(self.embedding_size))
             self.embedding_users = tf.Variable(initial_value=initializer(
-                shape=[self.num_users, self.embedding_size]
+                shape=[self.num_users * self.embedding_size]
                 , dtype=tf.float64)
                 , name="embedding_users")
             self.embedding_items = tf.Variable(initial_value=initializer(
-                shape=[self.num_items, self.embedding_size]
+                shape=[self.num_items * self.embedding_size]
                 , dtype=tf.float64)
                 , name="embedding_items")
 
@@ -59,8 +59,8 @@ class MF(tf.Module):
         :param ids: A tensor, float 64, represents the selected ids of users and items
         :return: A tensor, float 64, represents the predict result of interaction between special user and item
         """
-        user_embedding = tf.nn.embedding_lookup(self.embedding_users, ids[0])
-        item_embedding = tf.nn.embedding_lookup(self.embedding_items, ids[1])
+        user_embedding = tf.nn.embedding_lookup(tf.reshape(self.embedding_users, [-1, self.embedding_size]), ids[0])
+        item_embedding = tf.nn.embedding_lookup(tf.reshape(self.embedding_items, [-1, self.embedding_size]), ids[1])
         user_bias = tf.nn.embedding_lookup(self.bias_users, ids[0])
         item_bias = tf.nn.embedding_lookup(self.bias_items, ids[1])
 
@@ -84,8 +84,8 @@ class MF(tf.Module):
             params = [self.bias_items, self.bias_users, self.embedding_items, self.embedding_users] #, self.global_bias
             return [tf.reshape(param, [-1]) for param in params]
 
-        user_embedding = tf.nn.embedding_lookup(self.embedding_users, ids[0])
-        item_embedding = tf.nn.embedding_lookup(self.embedding_items, ids[1])
+        user_embedding = tf.nn.embedding_lookup(tf.reshape(self.embedding_users, [-1, self.embedding_size]), ids[0])
+        item_embedding = tf.nn.embedding_lookup(tf.reshape(self.embedding_items, [-1, self.embedding_size]), ids[1])
         user_bias = tf.nn.embedding_lookup(self.bias_users, ids[0])
         item_bias = tf.nn.embedding_lookup(self.bias_items, ids[1])
         params = [item_bias, user_bias, item_embedding, user_embedding] # , self.global_bias

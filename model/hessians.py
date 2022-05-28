@@ -1,7 +1,7 @@
 from matplotlib.pyplot import axis
 import tensorflow as tf
 
-def hessian_vector_product(xs, function, ps, id):
+def hessian_vector_product(xs, function, ps):
   """
     Multiply the Hessian of `ys` wrt `xs` by `v`.
     This is an efficient construction that uses a backprop-like approach
@@ -36,17 +36,33 @@ def hessian_vector_product(xs, function, ps, id):
     # First backprop
     first_grads = first_backprop.gradient(ys, xs)
       
-    elemwise_products = [
-      tf.reshape(grad, [-1]) * tf.stop_gradient(x)
-      for grad, x in zip(first_grads, ps) 
-      if grad is not None
-    ]
+    elemwise_products = [grad * tf.stop_gradient(x) for grad, x in zip(first_grads, ps)]
 
   # Second backprop
   second_grads = [tf.reshape(grad, [-1]) for grad in second_backprop.gradient(elemwise_products, xs)]
 
   return second_grads
 
+def hessian(xs, function):
+  with tf.GradientTape(persistent=True) as second_backprop:
+    second_backprop.watch(xs)
+
+    with tf.GradientTape() as first_backprop:
+      first_backprop.watch(xs)
+      ys = function()
+    # First backprop
+    first_grads = first_backprop.gradient(ys, xs)
+    grads_grads = [second_backprop.gradient(tf.convert_to_tensor(g), xs) for g in first_grads]
+    # hess_rows = [gg[tf.newaxis, ...] for gg in grad_grads]
+    for grads in grads_grads:
+      for grad in grads:
+        print(grad)
+      print()
+    # hessian = tf.concat(hess_rows, axis=0)
+    # print(hessian)
+      # hessians = second_backprop.jacobian(first_grads, xs)
+  exit()
+  return hessians
 
 def get_target_param_grad(grads, ids):
   """This function get the target parameters' gradients guided by provided ids
@@ -68,4 +84,4 @@ def get_target_param_grad(grads, ids):
   # global_bias_grad = tf.convert_to_tensor(global_bias_grad)
 
   grads = [item_bias_grad, user_bias_grad, item_embedding_grad, user_embedding_grad] # , global_bias_grad
-  return [tf.reshape(grad, [-1]) for grad in grads] 
+  return [tf.reshape(grad, [-1]) for grad in grads]
