@@ -1,6 +1,4 @@
-from asyncio import constants
 import numpy as np
-import tensorflow as tf
 
 
 def load_movielens(dir):
@@ -63,7 +61,7 @@ class Dataset(object):
         print("A set is added to the dataset.")
         return self.x.shape[0] - 1
 
-    def reset_copy(self, idxs=None, keep_idxs=None):
+    def reset_copy(self, idxs=None):
         """
         This method will reset the samples in the dataset to be operated.
         :param idxs: A 1d numpy array include all indexs to be kept
@@ -72,9 +70,6 @@ class Dataset(object):
         """
         if idxs is None:
             idxs = np.array(range(self.x.shape[0]))
-        if keep_idxs is not None:
-            keep_idxs = np.array(keep_idxs)
-            idxs = np.concatenate((idxs, keep_idxs), axis=0)
         self.index_in_epoch = 0
         self.x_copy = np.copy(self.x).take(idxs, axis=0)
         self.y_copy = np.copy(self.y).take(idxs)
@@ -112,16 +107,19 @@ class Dataset(object):
         """
         assert idx is not None
 
-        return self.x[idx], self.y[idx]
+        return self.x[idx].reshape((1, 2)), self.y[idx]
 
-    def get_related_idxs(self, idx):
-        """
-        
-        """
-        related_u_id = np.where(self.x_copy[:, 0] == idx[0])[0]
-        related_i_id = np.where(self.x_copy[:, 1] == idx[1])[0]
-        all_id = np.unique(np.concatenate((related_u_id, related_i_id)))
-        related_x_batch = (tf.constant(self.x_copy[all_id, 0]), tf.constant(self.x_copy[all_id, 1]))
-        related_y_batch = tf.constant(self.y_copy[all_id])
+    def get_related_idxs(self, x_idx):
+        """This method returns related indexs of provided index.
 
-        return related_x_batch, related_y_batch
+        Args:
+            idx (numpy int): represents the target index to find related indexes.
+
+        Returns:
+            all_id (numpy list): represents all related indexes of the provided index.
+        """
+        related_u_id = [(u_id, "u_id") for u_id in np.where(self.x_copy[:, 0] == x_idx[0])[0]]
+        related_i_id = [(i_id, "i_id") for i_id in np.where(self.x_copy[:, 1] == x_idx[1])[0]]
+        all_id = np.concatenate((related_u_id, related_i_id))
+
+        return all_id
