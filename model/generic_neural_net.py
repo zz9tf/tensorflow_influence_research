@@ -80,6 +80,9 @@ class Model(object):
             name="real_ys_placeholder"
         )
 
+        self.learning_rate = tf.Variable(self.learning_rate, name='learning_rate', trainable=False)
+        self.learning_rate_placeholder = tf.placeholder(tf.float32)
+        self.update_learning_rate_op = tf.assign(self.learning_rate, self.learning_rate_placeholder)
         # Setup predict and training
         self.predicts_op = self.get_predict_op(self.xs_placeholder)
         self.loss_op = self.get_loss_op(self.real_ys_placeholder, self.predicts_op)
@@ -88,7 +91,7 @@ class Model(object):
 
         self.accuracy_op = self.get_accuracy_op(self.predicts_op, self.real_ys_placeholder)
         self.all_params = self.get_all_params()
-        self.grad_all_params_op = tf.gradients(self.loss_op, self.all_params)
+        self.loss_grad_all_params_op = tf.gradients(self.loss_op, self.all_params)
 
     def load_model_checkpoint(self, load_checkpoint=False, checkpoint_name=None):
         self.sess.run(tf.global_variables_initializer())
@@ -115,7 +118,19 @@ class Model(object):
             keep_idxs = keep_idxs[keep_idxs != removed_idx]
         self.dataset["train"].reset_copy(keep_idxs)
 
+    # def update_learning_rate(self, step):
+
+    #     multiplier = 1
+    #     if epoch < self.decay_epochs[0]:
+    #         multiplier = 1
+    #     elif epoch < self.decay_epochs[1]:
+    #         multiplier = 0.1
+    #     else:
+    #         multiplier = 0.01
         
+    #     self.sess.run(
+    #         self.update_learning_rate_op, 
+    #         feed_dict={self.learning_rate_placeholder: multiplier * self.initial_learning_rate})
 
     def train(self, num_epoch=180000, load_checkpoint=True, save_checkpoints=True
             , verbose=True, checkpoint_name="", plot=False):
@@ -164,9 +179,6 @@ class Model(object):
                 plt.show()
 
         self.evaluate()
-        
-    def retrain(self):
-        print("Warning: this method should be override!")
 
     def evaluate(self):
         """
@@ -177,7 +189,7 @@ class Model(object):
         feed_dict = self.fill_feed_dict(self.dataset["train"].get_batch())
         loss = self.sess.run(self.loss_op, feed_dict=feed_dict)
         acc = self.sess.run(self.accuracy_op, feed_dict=feed_dict)
-        grads = self.sess.run(self.grad_all_params_op, feed_dict=feed_dict)
+        grads = self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict)
         
         # Test
         feed_dict = self.fill_feed_dict(self.dataset["test"].get_batch())
@@ -190,7 +202,7 @@ class Model(object):
         print('Test acc on all data:  %s' % test_acc)
         print('Norm of the mean of gradients: %s' % np.linalg.norm(np.concatenate(grads)))
 
-    def predict_x_inf_on_loss_function(self, verbose=True, target_loss="train", removed_id=None):
+    def predict_x_inf_on_loss_function(self, verbose=True, target_loss="train", removed_id=None, related_idxs=None):
         """
         This method predict the influence of removed single x on training loss function.
         :return:
@@ -199,8 +211,8 @@ class Model(object):
         assert removed_id is not None
         
         # removed point
-        feed_dict = self.fill_feed_dict(self.dataset["train"].get_one(removed_id))
-        removed_grads = self.sess.run(self.grad_all_params_op, feed_dict=feed_dict)
+        feed_dict = self.fill_feed_dict(self.dataset["train"].get_by_idxs(removed_id))
+        removed_grads = self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict)
         p_placeholder = [tf.placeholder(tf.float64, shape=tf.convert_to_tensor(a).get_shape()) for a in removed_grads]
         hvp_op = hessian_vector_product(self.loss_op, self.all_params, p_placeholder)
 
@@ -218,13 +230,13 @@ class Model(object):
 
         # target loss
         feed_dict = self.fill_feed_dict(self.dataset[target_loss].get_batch())
-        target_grads = np.concatenate(self.sess.run(self.grad_all_params_op, feed_dict=feed_dict))
+        target_grads = np.concatenate(self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict))
 
-        predict_diff = np.dot(target_grads, inverse_hvp) / self.dataset["train"].num_examples
+        predict_diff = -np.dot(target_grads, inverse_hvp) / self.dataset["train"].num_examples
 
-        return -predict_diff
+        return predict_diff
 
-    def predict_x_inf_on_predict_function(self, verbose=True, target_loss=["test", "test_y"], target_id=None, removed_id=None):
+    def predict_x_inf_on_predict_function(self, verbose=True, target_loss=["test", "test_y"], target_id=None, removed_id=None, related_idxs=None):
         """
         This method predict the influence of removed single x on the predict value of single test point.
         :return:
@@ -233,45 +245,41 @@ class Model(object):
         assert removed_id is not None
 
         # target point
-        feed_dict = self.fill_feed_dict(self.dataset[target_loss[0]].get_one(target_id))
-        target_x_id, _ = self.dataset[target_loss[0]].get_one(target_id)
+        target_x_id, target_real_y = self.dataset[target_loss[0]].get_by_idxs(target_id)
+        feed_dict = self.fill_feed_dict((target_x_id, target_real_y))
         get_grads = self.create_get_grads(target_x_id[0, 0], target_x_id[0, 1])
         if target_loss[1] in ["test_y", "train_y"]:
             print("get target y...")
             target_grads = get_grads(self.sess.run(tf.gradients(self.predicts_op, self.all_params), feed_dict=feed_dict))
+            # target_grads = self.sess.run(tf.gradients(self.predicts_op, self.all_params), feed_dict=feed_dict)
         elif target_loss[1] in ["test_loss", "train_loss"]:
             print("get target loss...")
-            target_grads = get_grads(self.sess.run(self.grad_all_params_op, feed_dict=feed_dict))
+            target_grads = get_grads(self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict))
+            # target_grads = self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict)
+        else:
+            assert NotImplementedError
 
         p_placeholder = [tf.placeholder(tf.float64, shape=tf.convert_to_tensor(a).get_shape()) for a in target_grads]
         hvp_op = hessian_vector_product(self.loss_op, self.all_params, p_placeholder, get_grads)
+        # hvp_op = hessian_vector_product(self.loss_op, self.all_params, p_placeholder)
 
         # hvp
         def hvp_f(cg_x):
             cg_x = split_concatenate_params(cg_x, target_grads)
-            feed_dict = self.fill_feed_dict(self.dataset["train"].get_batch())
+            feed_dict = self.fill_feed_dict(self.dataset["train"].get_by_idxs(related_idxs))
             for placeholder, x in zip(p_placeholder, cg_x):
                 feed_dict[placeholder] = x
             return np.concatenate(self.sess.run(hvp_op, feed_dict=feed_dict))
 
         inverse_hvp = split_concatenate_params(self.get_inverse_hvp(verbose=verbose,
-                                                    hvp_f=hvp_f,
-                                                    b=np.concatenate(target_grads))
-                                                    , target_grads)
-
+                                            hvp_f=hvp_f,
+                                            b=np.concatenate(target_grads))
+                                            , target_grads)
+        
         # removed point
-        feed_dict = self.fill_feed_dict(self.dataset["train"].get_one(int(removed_id[0])))
-        removed_grads = get_grads(self.sess.run(self.grad_all_params_op, feed_dict=feed_dict))
-
-        predict_diff = -(np.dot(np.concatenate(removed_grads), np.concatenate(inverse_hvp))) / self.dataset["train"].num_examples
-        # if removed_id[1] == 'u_id':
-        #     eu, _, bu, _, gb = removed_grads
-        #     hvp_eu, _, hvp_bu, _, hvp_gb = inverse_hvp
-        #     predict_diff = -(np.dot(eu, hvp_eu) + np.dot(bu, hvp_bu) + np.dot(gb, hvp_gb)) / self.dataset["train"].num_examples
-        # else:
-        #     _, ei, _, bi, gb = removed_grads
-        #     _, hvp_ei, _, hvp_bi, hvp_gb = inverse_hvp
-        #     predict_diff = -(np.dot(ei, hvp_ei) + np.dot(bi, hvp_bi) + np.dot(gb, hvp_gb)) / self.dataset["train"].num_examples
+        feed_dict = self.fill_feed_dict(self.dataset["train"].get_by_idxs(removed_id))
+        removed_grads = get_grads(self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict))
+        predict_diff = -(np.dot(np.concatenate(removed_grads), np.concatenate(inverse_hvp))) / len(related_idxs)
 
         return predict_diff
 
@@ -286,9 +294,9 @@ class Model(object):
                 ori_grads[2][u_id:(1 + u_id)])
             grads.append(
                 ori_grads[3][i_id:(1 + i_id)])
-            # grads.append(
-            #     ori_grads[4]
-            # )
+            grads.append(
+                ori_grads[4]
+            )
             return grads
         return get_grads
 

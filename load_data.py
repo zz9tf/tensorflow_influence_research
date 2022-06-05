@@ -101,13 +101,10 @@ class Dataset(object):
 
         return self.x_copy[start:end], self.y_copy[start:end]
 
-    def get_one(self, idx=None):
-        """
-        This method will return one point of data
-        """
-        assert idx is not None
-
-        return self.x[idx].reshape((1, 2)), self.y[idx]
+    def get_by_idxs(self, idxs=None):
+        assert idxs is not None
+        
+        return self.x.take(idxs, axis=0).reshape((-1,2)), self.y.take(idxs)
 
     def get_related_idxs(self, x_idx):
         """This method returns related indexs of provided index.
@@ -118,8 +115,8 @@ class Dataset(object):
         Returns:
             all_id (numpy list): represents all related indexes of the provided index.
         """
-        related_u_id = [(u_id, "u_id") for u_id in np.where(self.x_copy[:, 0] == x_idx[0])[0]]
-        related_i_id = [(i_id, "i_id") for i_id in np.where(self.x_copy[:, 1] == x_idx[1])[0]]
+        related_u_id = np.where(self.x_copy[:, 0] == x_idx[0])[0]
+        related_i_id = np.where(self.x_copy[:, 1] == x_idx[1])[0]
         all_id = np.concatenate((related_u_id, related_i_id))
 
         return all_id

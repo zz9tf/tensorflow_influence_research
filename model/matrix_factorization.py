@@ -72,9 +72,6 @@ class MF(Model):
         user_bias = tf.nn.embedding_lookup(tf.reshape(self.bias_users, [self.num_users, 1]), ids[:, 0])
         item_bias = tf.nn.embedding_lookup(tf.reshape(self.bias_items, [self.num_items, 1]), ids[:, 1])
 
-        # if ids.shape[0] == 1:  # for single point
-        #     rating = user_embedding * item_embedding + user_bias + item_bias + self.global_bias
-        # else:
         rating = tf.squeeze(tf.reduce_sum(user_embedding * item_embedding
                 , axis=1, keepdims=True) + user_bias + item_bias + self.global_bias)
 
@@ -86,6 +83,9 @@ class MF(Model):
         if self.weight_decay is not None:
             loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_users), self.weight_decay)
             loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_items), self.weight_decay)
+            # loss_val += tf.math.multiply(tf.nn.l2_loss(self.bias_users), self.weight_decay)
+            # loss_val += tf.math.multiply(tf.nn.l2_loss(self.bias_items), self.weight_decay)
+            # loss_val += tf.math.multiply(tf.nn.l2_loss(self.global_bias), self.weight_decay)
         return loss_val
 
     def get_one_step_train_op(self, learning_rate=1e-3, loss_op=None):
@@ -126,7 +126,7 @@ class MF(Model):
         """
         all_params = []
         for layer in ['embedding_layer']:
-            for var_name in ['embedding_users', 'embedding_items', 'bias_users', 'bias_items']:   # , 'global_bias'
+            for var_name in ['embedding_users', 'embedding_items', 'bias_users', 'bias_items', 'global_bias']:   # 
                 temp_tensor = tf.get_default_graph().get_tensor_by_name("%s/%s:0" % (layer, var_name))
                 all_params.append(temp_tensor)
         return all_params

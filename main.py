@@ -1,9 +1,9 @@
 import numpy as np
-from scipy.stats import pearsonr
 
 from load_data import load_movielens, load_yelp
 from model.matrix_factorization import MF
 from model.neural_collaborative_filtering import NCF
+from exprience import single_point_random, single_point_infmax, batch_points_random
 
 configs = {
     # detaset
@@ -23,13 +23,13 @@ configs = {
     "load_checkpoint": False,  # whether loading previous model if it exists.
     "plot": False ,  # if plot the figure of train loss and test loss
     # Influence on single point by remove one data point
-    "single_point": ["test", "test_loss"],   # the target y to be evaluated, train_y, train_loss, test_y, test_loss, None. None means not to evaluate.
-    "num_of_single": 1,  # the number of data points to be removed to evaluate the influence
+    "single_point": ["test", "test_y"],   # the target y to be evaluated, train_y, train_loss, test_y, test_loss, None. None means not to evaluate.
+    "num_of_single": 50,  # the number of data points to be removed to evaluate the influence
     # Influence on loss by remove one data point
     "batch_points": None,  # the target loss function to be evaluated, train, test, None. None means not to evaluate.
-    "num_to_removed": 50,  # number of points to retrain
     
-
+    "num_to_removed": 10,  # number of points to retrain
+    "retrain_times": 4,  # times to retrain the model
     "percentage_to_keep": [1],  # A list of the percentage of training dataset to keep, ex: 0.3, 0.5, 0.7, 0.9
 }
 
@@ -79,164 +79,15 @@ model = Model(
     }
 )
 
+# orin_8843_1___movielens_MF_explicit_damping1e-06_avextol1e-03_embed16_wd1e-03_step27000
+# model.train(checkpoint_name="test")
+# model.predict_x_inf_on_predict_function(target_loss=configs["single_point"],
+#                                         target_id=8843,
+#                                         removed_id=722042)
+
 if configs["single_point"]:
-    target_idxs = np.random.choice(dataset[configs["single_point"][0]].num_examples, configs["num_of_single"], replace=False)
-    print("target_idx: ", target_idxs)
-
-    actual_singles_diffs = []
-    predict_singles_diffs = []
-
-    for percentage_to_keep in configs["percentage_to_keep"]:
-        print("the percentage of training dataset to keep: %.2f" % percentage_to_keep)        
-        for target_idx in target_idxs:
-            # initialize related indexs
-            print("target_idx: ", target_idx)
-            target_x_idx = model.dataset[configs["single_point"][0]].get_one(target_idx)[0][0]
-            related_idxs = model.dataset["train"].get_related_idxs(target_x_idx)
-            print("related_idxs: {}\n".format(len(related_idxs)), related_idxs)
-            
-            # diff space
-            actual_single_diff = np.zeros(len(related_idxs))
-            predict_single_diff = np.zeros(len(related_idxs))
-            
-            np.random.seed(17)
-            num_to_keep = int(model.dataset["train"].x.shape[0] * percentage_to_keep)
-            basic_idxs = np.random.choice(model.dataset["train"].x.shape[0], num_to_keep, replace=False)
-            keep_idxs = np.unique(np.concatenate((basic_idxs, np.array([int(idx) for idx in related_idxs[:, 0]]))))
-            model.reset_dataset(keep_idxs=keep_idxs)
-            # training the original model
-            model.train(num_epoch=configs["num_epoch_train"],
-                        load_checkpoint=configs["load_checkpoint"],
-                        checkpoint_name="orin_{}_{}".format(target_idx, percentage_to_keep),
-                        verbose=False,
-                        plot=configs["plot"]
-                    )
-            feed_dict = model.fill_feed_dict(model.dataset[configs["single_point"][0]].get_batch())
-            if configs["single_point"][1] in ["test_y", "train_y"]:
-                print("get ori y...")
-                ori = model.sess.run(model.predicts_op, feed_dict=feed_dict)
-            elif configs["single_point"][1] in ["test_loss", "train_loss"]:
-                print("get ori loss...")
-                ori = model.sess.run(model.loss_op, feed_dict=feed_dict)
-
-            for i, removed_idx in enumerate(related_idxs[:10]):
-                print("\n======== removed point {}: {} ========".format(i, removed_idx))
-                # reload model
-                model.load_model_checkpoint(load_checkpoint=True
-                                        , checkpoint_name="orin_{}_{}___{}".format(
-                                            target_idx, percentage_to_keep,
-                                            model.model_name + "_step{}".format(configs["num_epoch_train"])
-                                            ))
-                print("loaded model: ", "orin_{}_{}___{}".format(
-                                            target_idx, percentage_to_keep,
-                                            model.model_name + "_step{}".format(configs["num_epoch_train"])
-                                            ))
-               
-                # Influence on loss function
-                predict_single_diff[i] = model.predict_x_inf_on_predict_function(
-                                        target_loss=configs["single_point"],
-                                        target_id=target_idx,
-                                        removed_id=removed_idx
-                                        )
-                
-                # retraining the model without the removed idx
-                model.reset_dataset(keep_idxs=keep_idxs, removed_idx=int(removed_idx[0]))
-                model.train(num_epoch=configs["num_epoch_train"],
-                            load_checkpoint=configs["load_checkpoint"],
-                            checkpoint_name="re_{}_{}_{}".format(target_idx, percentage_to_keep, removed_idx),
-                            verbose=False,
-                            plot=configs["plot"]
-                        )
-                
-                feed_dict = model.fill_feed_dict(model.dataset[configs["single_point"][0]].get_batch())
-                if configs["single_point"][1] in ["test_y", "train_y"]:
-                    print("get re y...")
-                    re = model.sess.run(model.predicts_op, feed_dict=feed_dict)
-                elif configs["single_point"][1] in ["test_loss", "train_loss"]:
-                    print("get re loss...")
-                    re = model.sess.run(model.loss_op, feed_dict=feed_dict)
-
-                print(configs["single_point"][1], "ori: ", ori)
-                print(configs["single_point"][1], " re: ", re)
-                print("real diff: ", re - ori)
-                print("predict diff: ", predict_single_diff[i])
-                actual_single_diff[i] = re - ori
-            
-                actual_singles_diffs.append(actual_single_diff)
-                predict_singles_diffs.append(predict_single_diff)
-
-    actual_singles_diffs = np.concatenate(actual_singles_diffs)
-    predict_singles_diffs = np.concatenate(predict_singles_diffs)
-    print('Correlation is %s' % pearsonr(actual_singles_diffs, predict_singles_diffs)[0])
-    np.savez(
-        'output/result-%s-%s-%s.npz' % (configs['model'], configs['dataset'] ,configs["single_point"][1]),
-        actual_diffs=actual_singles_diffs,
-        predict_diffs=predict_singles_diffs,
-        target_idxs=target_idxs
-    )
+    single_point_infmax(model, configs)
 
 
 if configs["batch_points"] is not None:
-    actual_loss_diff = np.zeros(configs["num_to_remove"])
-    predict_loss_diff = np.zeros(configs["num_to_remove"])
-
-    for percentage_to_keep in configs["percentage_to_keep"]:
-        print("the percentage of training dataset to keep: %.2f" % percentage_to_keep)
-        np.random.seed(17)
-        num_to_keep = int(model.dataset["train"].x.shape[0] * percentage_to_keep)
-        keep_idxs = np.random.choice(model.dataset["train"].x.shape[0], num_to_keep, replace=False)
-        # training the original model
-        model.reset_dataset(keep_idxs=keep_idxs)
-        model.train(
-                    num_epoch=configs["num_epoch_train"],
-                    load_checkpoint=configs["load_checkpoint"],
-                    checkpoint_name="orin_{}".format(percentage_to_keep),
-                    verbose=False,
-                    plot=configs["plot"]
-                )
-        feed_dict = model.fill_feed_dict(model.dataset[configs["batch_points"]].get_batch())
-        ori_loss = model.sess.run(model.loss_op, feed_dict=feed_dict)
-
-        removed_idxs = np.random.choice(basic_idxs, configs["num_to_remove"], replace=False)
-        for i, removed_idx in enumerate(removed_idxs):
-            print("\n======== removed point {}: {} ========".format(i, removed_idx))
-            # reload model
-            model.load_model_checkpoint(load_checkpoint=True
-                                    , checkpoint_name="orin_{}___{}".format(
-                                        percentage_to_keep,
-                                        model.model_name + "_step{}".format(configs["num_epoch_train"])
-                                        ))
-            print("loaded model: ", "orin_{}___{}".format(
-                                        percentage_to_keep,
-                                        model.model_name + "_step{}".format(configs["num_epoch_train"])
-                                        ))
-            # Influence on loss function
-            predict_loss_diff[i] = model.predict_x_inf_on_predict_function(removed_id=removed_idx, target_loss=configs["target_loss"])
-
-
-            # retraining the model without the removed idx
-            model.reset_dataset(keep_idxs=keep_idxs, removed_idx=removed_idx)
-            model.train(num_epoch=configs["num_epoch_train"],
-                            load_checkpoint=configs["load_checkpoint"],
-                            checkpoint_name="re_{}_{}".format(percentage_to_keep, removed_idx),
-                            verbose=False,
-                            plot=configs["plot"]
-                        )
-            feed_dict = model.fill_feed_dict(model.dataset[configs["batch_points"]].get_batch())
-            re_loss = model.sess.run(model.loss_op, feed_dict=feed_dict)
-            print("ori_loss: ", ori_loss)
-            print("re_loss: ", re_loss)
-            print("real diff: ", re_loss - ori_loss)
-            print("predict diff: ", predict_loss_diff[i])
-            actual_loss_diff[i] = re_loss - ori_loss
-
-    print('Correlation is %s' % pearsonr(actual_loss_diff, predict_loss_diff)[0])
-    np.savez(
-        'output/result-%s-%s-%s.npz' % (configs['model'], configs['dataset'], "loss_function"),
-        actual_diffs=actual_loss_diff,
-        predict_diffs=predict_loss_diff,
-        target_idxs=removed_idxs
-    )
-
-          
-
+    batch_points_random(model, configs)
