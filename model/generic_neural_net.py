@@ -263,7 +263,12 @@ class Model(object):
         hvp_op = hessian_vector_product(self.loss_op, self.all_params, p_placeholder, get_grads)
         # hvp_op = hessian_vector_product(self.loss_op, self.all_params, p_placeholder)
 
-        # hvp
+        # removed point
+        feed_dict = self.fill_feed_dict(self.dataset["train"].get_by_idxs(removed_id))
+        removed_grads = get_grads(self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict))
+        # removed_grads = self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict)
+
+        # hvp h*removed_point_grads
         def hvp_f(cg_x):
             cg_x = split_concatenate_params(cg_x, target_grads)
             feed_dict = self.fill_feed_dict(self.dataset["train"].get_by_idxs(related_idxs))
@@ -273,13 +278,10 @@ class Model(object):
 
         inverse_hvp = split_concatenate_params(self.get_inverse_hvp(verbose=verbose,
                                             hvp_f=hvp_f,
-                                            b=np.concatenate(target_grads))
+                                            b=np.concatenate(removed_grads))
                                             , target_grads)
-        
-        # removed point
-        feed_dict = self.fill_feed_dict(self.dataset["train"].get_by_idxs(removed_id))
-        removed_grads = get_grads(self.sess.run(self.loss_grad_all_params_op, feed_dict=feed_dict))
-        predict_diff = -(np.dot(np.concatenate(removed_grads), np.concatenate(inverse_hvp))) / len(related_idxs)
+
+        predict_diff = -(np.dot(np.concatenate(target_grads), np.concatenate(inverse_hvp))) / len(related_idxs)
 
         return predict_diff
 

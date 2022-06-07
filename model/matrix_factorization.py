@@ -1,4 +1,3 @@
-from matplotlib.pyplot import axis
 import tensorflow.compat.v1 as tf
 import numpy as np
 from model.generic_neural_net import Model
@@ -83,9 +82,9 @@ class MF(Model):
         if self.weight_decay is not None:
             loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_users), self.weight_decay)
             loss_val += tf.math.multiply(tf.nn.l2_loss(self.embedding_items), self.weight_decay)
-            # loss_val += tf.math.multiply(tf.nn.l2_loss(self.bias_users), self.weight_decay)
-            # loss_val += tf.math.multiply(tf.nn.l2_loss(self.bias_items), self.weight_decay)
-            # loss_val += tf.math.multiply(tf.nn.l2_loss(self.global_bias), self.weight_decay)
+            loss_val += tf.math.multiply(tf.nn.l2_loss(self.bias_users), self.weight_decay)
+            loss_val += tf.math.multiply(tf.nn.l2_loss(self.bias_items), self.weight_decay)
+            loss_val += tf.math.multiply(tf.nn.l2_loss(self.global_bias), self.weight_decay)
         return loss_val
 
     def get_one_step_train_op(self, learning_rate=1e-3, loss_op=None):

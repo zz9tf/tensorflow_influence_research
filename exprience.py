@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.stats import pearsonr
+import os
 
 def single_point_random(model, configs):
     target_idxs = np.random.choice(model.dataset[configs["single_point"][0]].num_examples, configs["num_of_single"], replace=False)
@@ -22,6 +23,7 @@ def single_point_random(model, configs):
             basic_idxs = np.random.choice(model.dataset["train"].x.shape[0], num_to_keep, replace=False)
             keep_idxs = np.unique(np.concatenate((basic_idxs, related_idxs)))
             model.reset_dataset(keep_idxs=keep_idxs)
+            
             # training the original model
             model.train(num_epoch=configs["num_epoch_train"],
                         load_checkpoint=configs["load_checkpoint"],
@@ -89,8 +91,10 @@ def single_point_random(model, configs):
     actual_singles_diffs = np.array(actual_singles_diffs)
     predict_singles_diffs = np.array(predict_singles_diffs)
     print('Correlation is %s' % pearsonr(actual_singles_diffs, predict_singles_diffs)[0])
+    if os.path.exists("result/output") is False:
+            os.makedirs("result/output")
     np.savez(
-        'output/%s-%s-%s-random.npz' % (configs['model'], configs['dataset'] ,configs["single_point"][1]),
+        'result/output/%s-%s-%s-random.npz' % (configs['model'], configs['dataset'] ,configs["single_point"][1]),
         actual_diffs=actual_singles_diffs,
         predict_diffs=predict_singles_diffs,
         target_idxs=target_idxs
@@ -136,7 +140,7 @@ def single_point_infmax(model, configs):
             
 
             predict_single_diffs = np.zeros([len(related_idxs)])
-            for i, removed_idx in enumerate(related_idxs):
+            for i, removed_idx in enumerate(related_idxs[:10]):
                 # Influence on loss function
                 predict_single_diffs[i] = model.predict_x_inf_on_predict_function(
                                             target_loss=configs["single_point"],
@@ -179,8 +183,10 @@ def single_point_infmax(model, configs):
     actual_singles_diffs = np.array(actual_singles_diffs)
     predict_singles_diffs = np.array(predict_singles_diffs)
     print('Correlation is %s' % pearsonr(actual_singles_diffs, predict_singles_diffs)[0])
+    if os.path.exists("result/output") is False:
+        os.makedirs("result/output")
     np.savez(
-        'output/%s-%s-%s-maxinf.npz' % (configs['model'], configs['dataset'] ,configs["single_point"][1]),
+        'result/output/%s-%s-%s-maxinf.npz' % (configs['model'], configs['dataset'] ,configs["single_point"][1]),
         actual_diffs=actual_singles_diffs,
         predict_diffs=predict_singles_diffs,
         target_idxs=target_idxs
@@ -241,8 +247,10 @@ def batch_points_random(model, configs):
             actual_loss_diff[i] = re_loss - ori_loss
 
     print('Correlation is %s' % pearsonr(actual_loss_diff, predict_loss_diff)[0])
+    if os.path.exists("result/output") is False:
+        os.makedirs("result/output")
     np.savez(
-        'output/result-%s-%s-%s.npz' % (configs['model'], configs['dataset'], "loss_function"),
+        'result/output/result-%s-%s-%s.npz' % (configs['model'], configs['dataset'], "loss_function"),
         actual_diffs=actual_loss_diff,
         predict_diffs=predict_loss_diff,
         target_idxs=removed_idxs

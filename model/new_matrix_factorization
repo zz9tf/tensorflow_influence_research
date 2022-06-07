@@ -1,0 +1,61 @@
+import tensorflow.compat.v1 as tf
+import numpy as np
+from model.generic_neural_net import Model
+
+class MF(Model):
+    def __init__(self, **kwargs):
+        super().__init__(basic_configs=kwargs.pop('basic_configs'))
+        model_configs = kwargs.pop('model_configs')
+        self.num_users = model_configs['num_users']
+        self.num_items = model_configs['num_items']
+        self.embedding_size = model_configs['embedding_size']
+        self.weight_decay = model_configs['weight_decay']
+
+        self.initialize_params()
+        self.initialize_op()
+
+
+    def initialize_params(self):
+        # Setup parameters
+        tf.random.set_random_seed(0)  # set seed for initializer
+        with tf.variable_scope('embedding_layer'):
+            initializer = tf.truncated_normal_initializer(
+                stddev=1 / np.square(self.embedding_size),
+                dtype=tf.float64
+            )
+            self.embedding_users = tf.Variable(
+                initial_value=initializer([self.num_users * self.embedding_size]),
+                name="embedding_users",
+                dtype=tf.float64
+            )
+            self.embedding_items = tf.Variable(
+                initial_value=initializer([self.num_items * self.embedding_size]),
+                name="embedding_items",
+                dtype=tf.float64
+            )
+
+            initializer = tf.constant_initializer(0.0, dtype=tf.float64)
+
+            self.bias_users = tf.Variable(
+                initial_value=initializer([self.num_users]),
+                name="bias_users",
+                dtype=tf.float64
+            )
+            self.bias_items =tf.Variable(
+                initial_value=initializer([self.num_items]),
+                name="bias_items",
+                dtype=tf.float64
+            )
+            self.global_bias = tf.Variable(
+                initial_value=initializer([1]),
+                name="global_bias",
+                dtype=tf.float64
+            )
+
+    def __str__(self):
+        mf = "-----------   MF   ------------\n" \
+               + "number of users: %d\n" % self.num_users \
+               + "number of items: %d\n" % self.num_items \
+               + "embedding size: %d\n" % self.embedding_size
+        return super().__str__(details=mf)
+         

@@ -19,16 +19,16 @@ configs = {
     "damping": 1e-6,  # damping term in influence function
     "avextol": 1e-3,  # threshold for optimization in influence function
     # train
-    "num_epoch_train": 27000,  # training steps
+    "num_epoch_train": 18000,  # training steps
     "load_checkpoint": False,  # whether loading previous model if it exists.
     "plot": False ,  # if plot the figure of train loss and test loss
     # Influence on single point by remove one data point
     "single_point": ["test", "test_y"],   # the target y to be evaluated, train_y, train_loss, test_y, test_loss, None. None means not to evaluate.
-    "num_of_single": 50,  # the number of data points to be removed to evaluate the influence
+    "num_of_single": 5,  # the number of data points to be removed to evaluate the influence
     # Influence on loss by remove one data point
     "batch_points": None,  # the target loss function to be evaluated, train, test, None. None means not to evaluate.
     
-    "num_to_removed": 10,  # number of points to retrain
+    "num_to_removed": 5,  # number of points to retrain
     "retrain_times": 4,  # times to retrain the model
     "percentage_to_keep": [1],  # A list of the percentage of training dataset to keep, ex: 0.3, 0.5, 0.7, 0.9
 }
