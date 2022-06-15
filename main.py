@@ -24,7 +24,7 @@ configs = {
     "plot": False ,  # if plot the figure of train loss and test loss
     # Influence on single point by remove one data point
     "single_point": ["test", "test_y"],   # the target y to be evaluated, train_y, train_loss, test_y, test_loss, None. None means not to evaluate.
-    "num_of_single": 5,  # the number of data points to be removed to evaluate the influence
+    "num_of_single": 50,  # the number of data points to be removed to evaluate the influence
     # Influence on loss by remove one data point
     "batch_points": None,  # the target loss function to be evaluated, train, test, None. None means not to evaluate.
     

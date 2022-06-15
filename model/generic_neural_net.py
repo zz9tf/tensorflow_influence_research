@@ -1,4 +1,3 @@
-from torch import embedding
 import tensorflow.compat.v1 as tf
 from tensorflow.python.framework import ops
 import numpy as np

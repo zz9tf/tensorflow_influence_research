@@ -140,7 +140,7 @@ def single_point_infmax(model, configs):
             
 
             predict_single_diffs = np.zeros([len(related_idxs)])
-            for i, removed_idx in enumerate(related_idxs[:10]):
+            for i, removed_idx in enumerate(related_idxs):
                 # Influence on loss function
                 predict_single_diffs[i] = model.predict_x_inf_on_predict_function(
                                             target_loss=configs["single_point"],
