@@ -7,6 +7,7 @@ from model.generic_neural_net import Model
 configs = {
     # detaset
     "dataset": "movielens",  # name of dataset: movielens or yelp
+    "datapath": "./subdata",  # the path of datasets
     # model configs
     "predict_model": "MF",  # modeltype:MF or NCF
     "embedding_size": 16,  # embedding size
@@ -32,9 +33,9 @@ configs = {
 }
 
 if configs['dataset'] == 'movielens':
-    dataset = load_movielens('./data')
+    dataset = load_movielens(configs["datapath"])
 elif configs['dataset'] == 'yelp':
-    dataset = load_yelp('./data')
+    dataset = load_yelp(configs["datapath"])
 else:
     raise NotImplementedError
 
